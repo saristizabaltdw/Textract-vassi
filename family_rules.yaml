@@ -1,0 +1,111 @@
+# Reglas de clasificación de familias de materiales.
+#
+# CÓMO FUNCIONA:
+#   - Las reglas se evalúan TOP-DOWN. La PRIMERA que matchea, gana.
+#   - Por eso las reglas más específicas van ARRIBA, las generales abajo.
+#   - Si nada matchea, se asigna `default_familia`.
+#
+# CAMPOS DE CADA REGLA:
+#   familia          : nombre de la familia (en mayúsculas, por convención SAP)
+#   match_name       : condiciones sobre 'Material Description'
+#     starts_with    : el nombre empieza con alguno de estos prefijos
+#     contains_any   : el nombre contiene alguna de estas substrings
+#     contains_all   : el nombre contiene TODAS estas substrings
+#     not_contains   : el nombre NO debe contener ninguna de estas (negación)
+#   match_unit       : la unidad de medida (BUn) debe ser una de estas
+#
+# Todas las comparaciones son case-insensitive.
+
+default_familia: OTROS
+
+rules:
+  # -------------------------------------------------------------------------
+  # NIVEL 1: Reglas de prefijo en el nombre (las más confiables)
+  # -------------------------------------------------------------------------
+  - familia: PAPEL
+    match_name:
+      starts_with: ["PAPEL ", "PAP "]
+
+  - familia: TELA
+    match_name:
+      starts_with: ["TELA ", "FABRIC "]
+
+  # -------------------------------------------------------------------------
+  # NIVEL 2: Marcas/términos muy específicos (baja ambigüedad)
+  # -------------------------------------------------------------------------
+  - familia: TELA
+    match_name:
+      contains_any:
+        - novasuede
+        - vienna
+        - corvon
+        - luxor
+        - lantau
+        - espresso
+        - charisma
+        - lux pelle
+        - nappan
+        - elite chocolate
+        - elite champagne
+        - skiv
+        - pellaq
+
+  - familia: PAPEL
+    match_name:
+      contains_any:
+        - rainbow
+        - kurz
+        - foil
+        - paper
+        - mtc
+
+  - familia: ESPUMA
+    match_name:
+      contains_any: [espuma, foam, eva]
+
+  - familia: ARMAZON
+    match_name:
+      contains_any:
+        - armazon plastica
+        - armazon plástica
+        - armazon
+
+  - familia: PLASTICO
+    match_name:
+      contains_any: [plastica, plástica, plastic]
+      not_contains: [armazon]
+
+  - familia: CARTON
+    match_name:
+      contains_any:
+        - "core de carton"
+        - "core de cartón"
+        - corrugado
+        - "corr "
+        - cmpc
+        - styrene
+
+  - familia: CINTA
+    match_name:
+      contains_any: [liston, listón, cordon, cordón, grosgrain, ribbon]
+
+  - familia: METAL
+    match_name:
+      contains_any: [metal, magnet, herraje]
+
+  - familia: MADERA
+    match_name:
+      contains_any: [madera, wood]
+
+  - familia: HILO
+    match_name:
+      contains_any: [hilo, thread]
+
+  # -------------------------------------------------------------------------
+  # NIVEL 3: Unidad de medida como último recurso
+  # -------------------------------------------------------------------------
+  - familia: QUIMICO
+    match_unit: [GAL, L]
+
+  - familia: KIT
+    match_unit: [KIT]

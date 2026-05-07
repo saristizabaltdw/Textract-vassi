@@ -1,0 +1,216 @@
+# Clasificador de Materiales SAP
+
+Pipeline para leer el catálogo de materiales SAP desde S3, clasificar cada
+material en una familia (PAPEL, TELA, CARTON, etc.) y subir el resultado
+clasificado de vuelta a S3.
+
+## ¿Qué hace?
+
+El comando `python run.py` ejecuta el flujo completo:
+
+1. **Descarga** el archivo `Price List MP SAP Ago-2025.xlsx` desde S3
+2. **Filtra** filas inválidas (sin `Material Description` — basura del export)
+3. **Clasifica** cada material en una familia usando reglas definidas en
+   `family_rules.yaml`
+4. **Redondea** las columnas numéricas para que el Excel se vea bien
+5. **Sube** el resultado a S3 con nombre versionado por fecha:
+   `s3://<BUCKET>/<S3_OUTPUT_PREFIX>/sap_clasificado_AAAA-MM-DD.xlsx`
+
+## Estructura del proyecto
+
+```
+.
+├── run.py                # Punto de entrada único — corre todo
+├── classify.py           # Lógica de clasificación
+├── s3_utils.py           # Utilidades de acceso a S3
+├── family_rules.yaml     # Reglas de clasificación (editable sin tocar código)
+├── requirements.txt      # Dependencias Python
+├── Dockerfile            # Imagen Docker
+├── .env.example          # Plantilla de variables de entorno
+└── README.md             # Este archivo
+```
+
+## Configuración
+
+### 1. Variables de entorno
+
+Copiá el template y completá tus credenciales:
+
+```bash
+cp .env.example .env
+```
+
+Después editá `.env`:
+
+```dotenv
+AWS_ACCESS_KEY_ID=AKIA...
+AWS_SECRET_ACCESS_KEY=...
+AWS_REGION=us-east-1
+
+S3_BUCKET=sigmaq
+S3_INPUT_PREFIX=bedrock/Cajas Especiales Drive/Archivos Excel-CSV/Materiales/
+S3_OUTPUT_PREFIX=clasificados/
+```
+
+**Importante:** `.env` **nunca** se sube a Git ni a Docker (ya está en
+`.gitignore` y `.dockerignore`). Las credenciales son sensibles.
+
+### 2. Permisos S3 necesarios
+
+El usuario IAM debe tener:
+
+- `s3:GetObject` sobre el archivo SAP en el bucket
+- `s3:PutObject` sobre el prefix de salida (`clasificados/`)
+- `s3:ListBucket` sobre el bucket (recomendado)
+
+Si falta alguno, vas a ver `AccessDenied` al ejecutar.
+
+## Ejecución
+
+### Opción A: localmente con Python
+
+Instalar dependencias y correr:
+
+```bash
+pip install -r requirements.txt
+python run.py
+```
+
+### Opción B: con Docker
+
+Construir la imagen:
+
+```bash
+docker build -t sigma-classifier .
+```
+
+Ejecutar (le pasamos el `.env` con las credenciales):
+
+```bash
+docker run --rm --env-file .env sigma-classifier
+```
+
+## Otros comandos útiles
+
+`classify.py` también acepta flags individuales para inspección:
+
+```bash
+# Solo clasifica y muestra distribución (NO sube nada)
+python classify.py
+
+# Muestra todos los materiales que cayeron en una familia específica
+python classify.py --familia OTROS
+python classify.py --familia TELA
+
+# Muestra una muestra aleatoria de 30 materiales clasificados
+python classify.py --sample 30
+
+# Clasifica y sube (igual que run.py)
+python classify.py --upload
+```
+
+## Cómo agregar/modificar familias
+
+Las reglas viven en `family_rules.yaml`. **No hay que tocar Python para
+cambiar las clasificaciones.**
+
+Estructura:
+
+```yaml
+default_familia: OTROS
+
+rules:
+  - familia: TELA
+    match_name:
+      starts_with: ["TELA ", "FABRIC "]
+
+  - familia: PAPEL
+    match_name:
+      contains_any: [rainbow, kurz, foil, paper]
+
+  - familia: QUIMICO
+    match_unit: [GAL, L]
+```
+
+### Reglas de oro
+
+1. **Las reglas se evalúan top-down**: la primera que matchea, gana
+2. **Reglas específicas arriba**, generales abajo
+3. Las comparaciones son **case-insensitive**
+4. Si nada matchea, se asigna `default_familia` (OTROS)
+
+### Tipos de condiciones
+
+| Campo | Qué hace |
+|-------|----------|
+| `starts_with` | El nombre debe empezar con alguno de estos prefijos |
+| `contains_any` | El nombre debe contener al menos una de estas substrings |
+| `contains_all` | El nombre debe contener TODAS estas substrings |
+| `not_contains` | El nombre NO debe contener ninguna de estas (negación) |
+| `match_unit` | La unidad de medida (BUn) debe ser una de estas |
+
+### Iteración recomendada
+
+Cuando se agregan reglas o se ajustan:
+
+```bash
+# 1. Editar family_rules.yaml
+# 2. Ver qué quedó en OTROS para detectar reglas que faltan
+python classify.py --familia OTROS
+
+# 3. Verificar que las reglas existentes siguen funcionando bien
+python classify.py --familia TELA
+python classify.py --familia PAPEL
+
+# 4. Cuando esté correcto, subir
+python run.py
+```
+
+## Salida
+
+El archivo subido tiene todas las columnas originales del SAP **más una
+columna nueva**: `familia`.
+
+Ejemplo:
+
+| Material | Material Description | BUn | Total Stock | Precio Unit. | familia |
+|----------|---------------------|-----|-------------|--------------|---------|
+| 20142038 | TELA LUX PELLE 181002 PEARL 54" WSG | YD | 50 | 12.45 | TELA |
+| 20136396 | PAP RAINBOW 70 IVORY ANTIQUE 53" | YD | 200 | 8.30 | PAPEL |
+| 20109890 | ESPUMA BLANCA 1" ESPECIAL 2X1 M. | SH | 30 | 25.00 | ESPUMA |
+
+## Resolución de problemas
+
+### "Falta S3_BUCKET en .env"
+No completaste el `.env`. Revisá el archivo y asegurate que `S3_BUCKET` tiene valor.
+
+### "AccessDenied" al subir
+Tu usuario IAM no tiene permisos `s3:PutObject` sobre el prefix de salida.
+Pediselo al equipo de AWS.
+
+### El archivo subido se ve con muchos decimales
+Las columnas numéricas se redondean automáticamente (ver
+`NUMERIC_COLUMNS_ROUNDING` en `classify.py`). Si querés cambiar la cantidad
+de decimales, editá ese diccionario.
+
+### Hay muchos materiales en OTROS
+Eso significa que faltan reglas en el YAML. Corré:
+
+```bash
+python classify.py --familia OTROS
+```
+
+Y agregá reglas para los patrones que veas.
+
+## Próximos pasos (futuro)
+
+Esta es la **Fase 1**: clasificación del catálogo SAP. Las siguientes fases
+están pensadas pero no implementadas todavía:
+
+- **Fase 2**: enriquecer cada material con datos de los otros archivos
+  (Fabric Details, Leafar, EVA Foam, CARSA, etc.) — agregar columnas como
+  `proveedor`, `origen`, `precio_actualizado`
+- **Fase 3**: agente de Bedrock que consulte la información clasificada
+  para responder consultas tipo "¿qué materiales tengo en la familia
+  TELA con stock disponible?"
+- **Fase 4**: tablero de visualización
