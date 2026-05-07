@@ -34,14 +34,6 @@ El comando `python run.py` ejecuta el flujo completo:
 
 ### 1. Variables de entorno
 
-Copiá el template y completá tus credenciales:
-
-```bash
-cp .env.example .env
-```
-
-Después editá `.env`:
-
 ```dotenv
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...
@@ -51,20 +43,6 @@ S3_BUCKET=sigmaq
 S3_INPUT_PREFIX=bedrock/Cajas Especiales Drive/Archivos Excel-CSV/Materiales/
 S3_OUTPUT_PREFIX=clasificados/
 ```
-
-**Importante:** `.env` **nunca** se sube a Git ni a Docker (ya está en
-`.gitignore` y `.dockerignore`). Las credenciales son sensibles.
-
-### 2. Permisos S3 necesarios
-
-El usuario IAM debe tener:
-
-- `s3:GetObject` sobre el archivo SAP en el bucket
-- `s3:PutObject` sobre el prefix de salida (`clasificados/`)
-- `s3:ListBucket` sobre el bucket (recomendado)
-
-Si falta alguno, vas a ver `AccessDenied` al ejecutar.
-
 ## Ejecución
 
 ### Opción A: localmente con Python
